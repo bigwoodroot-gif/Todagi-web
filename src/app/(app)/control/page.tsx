@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Gauge,
@@ -14,6 +14,7 @@ import {
   BatteryMedium,
   Wifi,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 const container = {
   hidden: { opacity: 0 },
@@ -73,13 +74,42 @@ function getPressureLabel(p: number): string {
 export default function Control() {
   const [pressure, setPressure] = useState(45);
   const [activePreset, setActivePreset] = useState<string | null>(null);
-  const [isActive, setIsActive] = useState(true);
+  const [isActive, setIsActive] = useState(false);
   const [isAutoMode, setIsAutoMode] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+
+  const sendPumpCommand = useCallback(async (command: "pump_on" | "pump_off", pressureValue: number) => {
+    setIsSending(true);
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      await supabase.from("device_commands").insert({
+        user_id: user.id,
+        command,
+        pressure: pressureValue,
+      });
+    } catch (e) {
+      console.error("명령 전송 실패:", e);
+    } finally {
+      setIsSending(false);
+    }
+  }, []);
+
+  const togglePump = useCallback(async () => {
+    const next = !isActive;
+    setIsActive(next);
+    await sendPumpCommand(next ? "pump_on" : "pump_off", next ? pressure : 0);
+  }, [isActive, pressure, sendPumpCommand]);
 
   const handlePresetSelect = (preset: (typeof presets)[0]) => {
     setActivePreset(preset.id);
     setPressure(preset.pressure);
     setIsAutoMode(false);
+    if (isActive) {
+      sendPumpCommand("pump_on", preset.pressure);
+    }
   };
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -131,15 +161,16 @@ export default function Control() {
                   </div>
                 </div>
                 <button
-                  onClick={() => setIsActive(!isActive)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                  onClick={togglePump}
+                  disabled={isSending}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-50 ${
                     isActive
                       ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400"
                       : "bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400"
                   }`}
                 >
                   <Power className="w-3.5 h-3.5" />
-                  {isActive ? "작동 중" : "정지됨"}
+                  {isSending ? "전송 중..." : isActive ? "작동 중" : "정지됨"}
                 </button>
               </div>
 
