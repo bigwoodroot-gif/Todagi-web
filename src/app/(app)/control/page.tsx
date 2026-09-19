@@ -82,11 +82,8 @@ export default function Control() {
     setIsSending(true);
     try {
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
 
       await supabase.from("device_commands").insert({
-        user_id: user.id,
         command,
         pressure: pressureValue,
       });
